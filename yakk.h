@@ -27,10 +27,10 @@ struct taskblock;
 typedef struct taskblock* TCBptr;
 typedef struct taskblock
 {
-	int id;					//0	
-	int priority;			//2
-	int* pStck; 			//4	
-	void(*pInst);			//6
+	int* pStck; 			//0
+	void(*pInst);			//2
+	int id;					//4	
+	int priority;			//6
 	enum State    state;
 	char		context;
 	int	delay_counter;
@@ -48,8 +48,9 @@ extern int next_available_tcb;
 
 extern TCBptr YKList;
 extern TCBptr running_task;
+extern TCBptr old_task;
 
-extern void YKDispHandler(TCBptr old_task, void(*pInst), int* pStck);
+extern void YKDispHandler();
 
 void YKInitialize(void);       // Initializes all required kernel data structures
 void YKEnterMutex(void);       //Disables interrupts
@@ -57,7 +58,7 @@ void YKExitMutex(void);        //Enables interrupts
 void YKIdleTask(void);         //Kernel's idle task
 void YKNewTask(void(*task)(void), void *taskStack, unsigned char priority);  //Creates a new task
 void YKRun(void);              //Starts actual execution of user code
-void YKScheduler(int save_context);         //Determines the highest priority ready task
+void YKScheduler(int dispatcher_type);         //Determines the highest priority ready task
 void YKDispatcher(TCBptr task, int save_context);       //Begins or resumes execution of the next task
 void YKDelayTask(unsigned count);
 void YKEnterISR(void);

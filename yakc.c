@@ -1,11 +1,17 @@
 #include "yakk.h"
 #include "yaku.h"
+#include "clib.h"
+
+#define FIRST_DISPATCH 0
+#define ISR_DISPATCH 1
+#define BLOCK_DISPATCH 2
 
 TCB tcb_array[MAX_TASKS + 1];
 int next_available_tcb = 0;
 
 TCBptr YKList;
 TCBptr running_task;
+TCBptr old_task;
 int YK_running = 0;
 int YKCtxSwCount;
 int YKIdleCount;
@@ -54,6 +60,8 @@ void YKIdleTask(void)
 	while (1)
 	{
 		++YKIdleCount;
+		--YKIdleCount;
+		++YKIdleCount;
 		//read disassemble and ensure there are at least four instruction here
 	}
 }
@@ -96,7 +104,7 @@ void YKNewTask(void(*task)(void), void *taskStack, unsigned char priority)
 		}
 	}
 	if (YK_running) {
-		YKScheduler(0);
+		YKScheduler(BLOCK_DISPATCH);
 	}
 
 	//MAYBE:EXIT MUTEX
@@ -106,7 +114,7 @@ void YKRun(void)
 {
 	if (YKList != &(tcb_array[0])) { //If idle task is not at the head of list (ie there are user-defined tasks)
 		YK_running = 1;
-		YKScheduler(0);
+		YKScheduler(FIRST_DISPATCH);
 
 	}
 	// Tells kernel to begin execution of tasks
@@ -114,12 +122,9 @@ void YKRun(void)
 	//            Cause Scheduler to Run
 }
 
-extern printString(char* error);
-
-void YKScheduler(int save_context)        //Determines the highest priority ready taskvoid YKScheduler(void)
+void YKScheduler(int dispatcher_type)        //Determines the highest priority ready taskvoid YKScheduler(void)
 {
 	TCBptr currentTCB = YKList;
-	char* error = "No running tasks! YKIdleTask() should at least be running\n";
 
 	YKEnterMutex();
 	while (currentTCB != NULL) {
@@ -127,13 +132,14 @@ void YKScheduler(int save_context)        //Determines the highest priority read
 			break;
 		}
 		else if (currentTCB->state == READY) {
-			YKDispatcher(currentTCB, save_context);
+			++YKCtxSwCount;
+			YKDispatcher(currentTCB, dispatcher_type);
 			break;
 		}
 		currentTCB = currentTCB->next;
 	}
 	YKExitMutex();
-	//printString(error);
+	//printString("No running tasks! YKIdleTask() should at least be running\n");
 
 	//Determines the highest priority ready task
 	//    -If "Current Task" = Highest Priority Ready Task, Return
@@ -143,29 +149,30 @@ void YKScheduler(int save_context)        //Determines the highest priority read
 	//PARAMETER IDEAS: Task Name or ID of Highest Priority Ready Task
 }
 
-extern call_function(int*, int*);
-extern void YKDispHandler(TCBptr old_task, void(*pInst), int* pStck);
-extern void YKFirst(void(*pInst), int* pStck);
+//extern call_function(int*, int*);
+extern void YKDispHandler();
+extern void YKFirst();
+extern void YKISR();
+extern void YKSecond();
 
-void YKDispatcher(TCBptr task, int save_context)
+void YKDispatcher(TCBptr task, int dispatcher_type)
 {
-	TCBptr old_task = running_task;
 	int bool_return = 0;
-
-	//YKEnterMutex();
 	int enable = task->firstTime;
+
+	old_task = running_task;
 
 	if(FirstTime) {		//FIRST TIME
 		task->firstTime = 0;
 		FirstTime = 0;
-		++YKCtxSwCount;
+		//++YKCtxSwCount;
 		running_task = task;
-		//enable_interrupts();
-		//bool_return = 2;
+		//bool_return = 2;save_context
 	}
 	else if (running_task->state == BLOCKED) {
 		running_task = task;	//SETS NEW RUNNING TASK
 		if (!(task->firstTime)) {
+			task->firstTime = 0;
 			//++YKCtxSwCount;
 			//bool_return = 2;
 			//bool_return = 1;
@@ -173,62 +180,38 @@ void YKDispatcher(TCBptr task, int save_context)
 		else {
 			task->firstTime = 0;
 			task->state = RUNNING;
-			++YKCtxSwCount;
+			//++YKCtxSwCount;
 			//bool_return = 3;
 		}
 	}
 	else {	
 		task->firstTime = 0;
-		++YKCtxSwCount;
+		//++YKCtxSwCount;
 		old_task->state = READY;
 		task->state = RUNNING;
 		running_task = task;
 		//bool_return = 3;
 	}
 
-	if (enable) enable_interrupts();
+	//if (enable) enable_interrupts();
 	
-	//YKExitMutex();
-
-	/*if (bool_return == 1) return;
-	else if (bool_return == 2) {
-		YKFirst(task->pInst, task->pStck);
+	if (dispatcher_type == BLOCK_DISPATCH) {
+		printString("block dispatch\n");
+		if(enable){
+			YKSecond();
+		}
+		else{
+			YKDispHandler(); 
+		}
 	}
-	else if (bool_return == 3) {
-		//if(running_task == 0) YKFirst(task->pInst, task->pStck);
-		YKDispHandler(old_task,
-					  task->pInst,
-					  task->pStck);
+	else if (dispatcher_type == FIRST_DISPATCH) {
+		YKFirst();	
 	}
-	*/
-
-	if (save_context) YKDispHandler(old_task,
-		task->pInst,
-		task->pStck); 
-	else{
-		YKFirst(task->pInst, task->pStck);
-	}
-
-	
-	/*
-	task->firstTime = 0;
-	++YKCtxSwCount;
-	old_task->state = READY;	//NO
-	task->state = RUNNING;
-	running_task = task;	//SETS NEW RUNNING TASK
-	
-	
-	
-	if (!(FirstTime)) {
-		YKDispHandler(old_task,
-					  task->pInst,
-					  task->pStck);	//MAYBE DISABLE AND ENBALE INTS 
-	}									//WHILE SAVING CONTEXT
 	else {
-		FirstTime = 0;
-		YKFirst(task->pInst, task->pStck);		//FUNCTION CALL BASED ON ADDRESS
+		YKISR();
 	}
-	*/
+
+	
 	
 }
 
@@ -240,7 +223,7 @@ void YKDelayTask(unsigned count)
 	running_task->state = BLOCKED;			//BLOCKS DELAYED TASK
 	
 	//MAYBE: SAVE CONTEXT										//PRINT STRING HERE
-	YKScheduler(1);
+	YKScheduler(BLOCK_DISPATCH);
 	//MAYBE: RESTORE CONTEXT
 	//CALLS SPECIAL SCHEDULER AND SAVES CONTEXT
 	//MAYBE: RESTORE CONTEXT AND GO BACK TO FUNCTION
@@ -257,7 +240,7 @@ void YKExitISR()
 	--YK_Depth;
 	if (YK_Depth == 0){ //&& depthMoreOne) {	//ONLY RUN SCHEDULER IF DEPTH WAS EVER BIGGER THAN 1
 		depthMoreOne = 0;
-		YKScheduler(0);
+		YKScheduler(ISR_DISPATCH);
 	}
 }
 
@@ -274,6 +257,7 @@ void YKTickHandler()
 			--(currentTCB->delay_counter);
 			if (currentTCB->delay_counter == 0) {
 				currentTCB->state = READY;
+				printString("Set to ready\n");
 			}
 		}
 		currentTCB = currentTCB->next;

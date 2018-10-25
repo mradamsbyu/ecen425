@@ -150,10 +150,10 @@ struct taskblock;
 typedef struct taskblock* TCBptr;
 typedef struct taskblock
 {
- int id;
- int priority;
  int* pStck;
  void(*pInst);
+ int id;
+ int priority;
  enum State state;
  char context;
  int delay_counter;
@@ -171,8 +171,9 @@ extern int next_available_tcb;
 
 extern TCBptr YKList;
 extern TCBptr running_task;
+extern TCBptr old_task;
 
-extern void YKDispHandler(TCBptr old_task, void(*pInst), int* pStck);
+extern void YKDispHandler();
 
 void YKInitialize(void);
 void YKEnterMutex(void);
@@ -180,7 +181,7 @@ void YKExitMutex(void);
 void YKIdleTask(void);
 void YKNewTask(void(*task)(void), void *taskStack, unsigned char priority);
 void YKRun(void);
-void YKScheduler(int save_context);
+void YKScheduler(int dispatcher_type);
 void YKDispatcher(TCBptr task, int save_context);
 void YKDelayTask(unsigned count);
 void YKEnterISR(void);

@@ -7,20 +7,13 @@ disable_interrupts:
 	cli
 	ret
 
-YKFirst:
+YKSecond:
 	push bp
 	mov bp, sp
-	mov sp, word[bp+6]
-	call word[bp+4]
-	iret			;Program should NEVER Execute this Statement.
-				;Use it as a Debugging Point
-	
-YKDispHandler:
-	
-	push bp
-	mov bp, sp
-	
 	pushf
+	push cs
+	push word [ipLabelFirst]
+
 	push ax
 	push bx
 	push cx
@@ -30,18 +23,41 @@ YKDispHandler:
 	push bp
 	push es
 	push ds
+
+	mov si, word[old_task]
+	mov [si], sp	
+	mov si, word[running_task]
+	mov sp, [si]
+		
+	iret
+
+	ipLabelFirst: DW Label2
+
+Label2:
+	mov sp, bp
+	pop bp
+	ret
+
+YKFirst:
+	;push bp
+	;mov bp, sp
+
+	mov si, word[running_task]
+	mov sp, [si]
+	mov ax, 0x200
+	add si, 2
+	mov si, [si]
 	
-	mov si, word [bp+4]	;TCB Location
-	add si, 4		;TCB->STACK Location
-	mov [si], sp		;SP OF OLD TASK IS UPDATED
-	add si, 2		;TCB->IP Location
-	call GetIP
-	add ax, 11
-	mov [si], ax
-	mov sp, word[bp+8]
-	call word[bp+6]
-	
-	add sp, 2			;USED AS JUNK, SO JUST GETTING RID OF IT
+	push ax
+	push cs
+	push si
+	iret			
+
+YKISR:
+	mov si, word[old_task]
+	mov [si], sp
+	mov si, word[running_task]
+	mov sp, [si]	;move the new sp to the sp register			
 	pop ds
 	pop es
 	pop bp
@@ -51,18 +67,66 @@ YKDispHandler:
 	pop cx
 	pop bx
 	pop ax
-	popf
+	iret		; this assumes that the top of the stack is ip, cs, flags. iret atomically pops those three and returns instruction control to the new ip
+	
+YKDispHandler:
+	
+	push bp
+	mov bp, sp
+
+	pushf
+	push cs
+	push word [ipLabel]	
+
+	push ax
+	push bx
+	push cx
+	push dx
+	push si
+	push di
+	push bp
+	push es
+	push ds
+		
+;save old sp and get new sp
+	mov si, word[old_task]
+	mov [si], sp
+	mov si, word[running_task]
+	mov sp, [si]
+
+	pop ds
+	pop es
+	pop bp
+	pop di
+	pop si
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+	iret
+
+	ipLabel: DW Label1
+
+Label1:
 	mov sp, bp
 	pop bp
 	ret
 
-GetIP:
-	push bp
-	mov bp, sp
+
+
+
+
+
+
+
+
+;GetIP:
+;	push bp
+;	mov bp, sp
 	
-	mov ax, word[bp+2]
+;	mov ax, word[bp+2]
 	
-	mov sp, bp
-	pop bp
-	ret
+;	mov sp, bp
+;	pop bp
+;	ret
 

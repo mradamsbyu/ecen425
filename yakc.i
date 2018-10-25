@@ -118,10 +118,10 @@ struct taskblock;
 typedef struct taskblock* TCBptr;
 typedef struct taskblock
 {
- int id;
- int priority;
  int* pStck;
  void(*pInst);
+ int id;
+ int priority;
  enum State state;
  char context;
  int delay_counter;
@@ -139,8 +139,9 @@ extern int next_available_tcb;
 
 extern TCBptr YKList;
 extern TCBptr running_task;
+extern TCBptr old_task;
 
-extern void YKDispHandler(TCBptr old_task, void(*pInst), int* pStck);
+extern void YKDispHandler();
 
 void YKInitialize(void);
 void YKEnterMutex(void);
@@ -148,7 +149,7 @@ void YKExitMutex(void);
 void YKIdleTask(void);
 void YKNewTask(void(*task)(void), void *taskStack, unsigned char priority);
 void YKRun(void);
-void YKScheduler(int save_context);
+void YKScheduler(int dispatcher_type);
 void YKDispatcher(TCBptr task, int save_context);
 void YKDelayTask(unsigned count);
 void YKEnterISR(void);
@@ -157,12 +158,43 @@ void YKTickHandler(void);
 # 2 "yakc.c" 2
 # 1 "yaku.h" 1
 # 3 "yakc.c" 2
+# 1 "clib.h" 1
+
+
+
+void print(char *string, int length);
+void printNewLine(void);
+void printChar(char c);
+void printString(char *string);
+
+
+void printInt(int val);
+void printLong(long val);
+void printUInt(unsigned val);
+void printULong(unsigned long val);
+
+
+void printByte(char val);
+void printWord(int val);
+void printDWord(long val);
+
+
+void exit(unsigned char code);
+
+
+void signalEOI(void);
+# 4 "yakc.c" 2
+
+
+
+
 
 TCB tcb_array[1 + 1];
 int next_available_tcb = 0;
 
 TCBptr YKList;
 TCBptr running_task;
+TCBptr old_task;
 int YK_running = 0;
 int YKCtxSwCount;
 int YKIdleCount;
@@ -211,6 +243,8 @@ void YKIdleTask(void)
  while (1)
  {
   ++YKIdleCount;
+  --YKIdleCount;
+  ++YKIdleCount;
 
  }
 }
@@ -253,7 +287,7 @@ void YKNewTask(void(*task)(void), void *taskStack, unsigned char priority)
   }
  }
  if (YK_running) {
-  YKScheduler(0);
+  YKScheduler(2);
  }
 
 
@@ -271,12 +305,9 @@ void YKRun(void)
 
 }
 
-extern printString(char* error);
-
-void YKScheduler(int save_context)
+void YKScheduler(int dispatcher_type)
 {
  TCBptr currentTCB = YKList;
- char* error = "No running tasks! YKIdleTask() should at least be running\n";
 
  YKEnterMutex();
  while (currentTCB != 0) {
@@ -284,38 +315,40 @@ void YKScheduler(int save_context)
    break;
   }
   else if (currentTCB->state == READY) {
-   YKDispatcher(currentTCB, save_context);
+   ++YKCtxSwCount;
+   YKDispatcher(currentTCB, dispatcher_type);
    break;
   }
   currentTCB = currentTCB->next;
  }
  YKExitMutex();
-# 144 "yakc.c"
+# 150 "yakc.c"
 }
 
-extern call_function(int*, int*);
-extern void YKDispHandler(TCBptr old_task, void(*pInst), int* pStck);
-extern void YKFirst(void(*pInst), int* pStck);
 
-void YKDispatcher(TCBptr task, int save_context)
+extern void YKDispHandler();
+extern void YKFirst();
+extern void YKISR();
+extern void YKSecond();
+
+void YKDispatcher(TCBptr task, int dispatcher_type)
 {
- TCBptr old_task = running_task;
  int bool_return = 0;
-
-
  int enable = task->firstTime;
+
+ old_task = running_task;
 
  if(FirstTime) {
   task->firstTime = 0;
   FirstTime = 0;
-  ++YKCtxSwCount;
-  running_task = task;
 
+  running_task = task;
 
  }
  else if (running_task->state == BLOCKED) {
   running_task = task;
   if (!(task->firstTime)) {
+   task->firstTime = 0;
 
 
 
@@ -323,28 +356,39 @@ void YKDispatcher(TCBptr task, int save_context)
   else {
    task->firstTime = 0;
    task->state = RUNNING;
-   ++YKCtxSwCount;
+
 
   }
  }
  else {
   task->firstTime = 0;
-  ++YKCtxSwCount;
+
   old_task->state = READY;
   task->state = RUNNING;
   running_task = task;
 
  }
 
- if (enable) enable_interrupts();
-# 205 "yakc.c"
- if (save_context) YKDispHandler(old_task,
-  task->pInst,
-  task->pStck);
- else{
-  YKFirst(task->pInst, task->pStck);
+
+
+ if (dispatcher_type == 2) {
+  printString("block dispatch\n");
+  if(enable){
+   YKSecond();
+  }
+  else{
+   YKDispHandler();
+  }
  }
-# 233 "yakc.c"
+ else if (dispatcher_type == 0) {
+  YKFirst();
+ }
+ else {
+  YKISR();
+ }
+
+
+
 }
 
 void YKDelayTask(unsigned count)
@@ -355,7 +399,7 @@ void YKDelayTask(unsigned count)
  running_task->state = BLOCKED;
 
 
- YKScheduler(1);
+ YKScheduler(2);
 
 
 
@@ -372,7 +416,7 @@ void YKExitISR()
  --YK_Depth;
  if (YK_Depth == 0){
   depthMoreOne = 0;
-  YKScheduler(0);
+  YKScheduler(1);
  }
 }
 
@@ -389,6 +433,7 @@ void YKTickHandler()
    --(currentTCB->delay_counter);
    if (currentTCB->delay_counter == 0) {
     currentTCB->state = READY;
+    printString("Set to ready\n");
    }
   }
   currentTCB = currentTCB->next;
